@@ -1,24 +1,30 @@
-import { Router } from 'express';
-import { uploadMusicFilesController } from '../controllers/upload.controller';
-import { authMiddleware } from '../middleware/auth.middleware'; // 1. IMPORTAMOS EL MIDDLEWARE DE AUTH
-import { upload } from '../middleware/upload'; // 2. IMPORTAMOS LA CONFIGURACIÓN DE MULTER DESDE SU ARCHIVO
+// src/routes/upload.routes.ts
 
-// Esta configuración le dice a Vercel que no procese el cuerpo de la petición.
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+import { Router } from 'express';
+import { authMiddleware } from '../middleware/auth.middleware';
+import { 
+  getSignedUrlForUploadController, 
+  finalizeUploadController 
+} from '../controllers/upload.controller';
 
 const router = Router();
 
-// 3. APLICAMOS LOS MIDDLEWARES EN EL ORDEN CORRECTO
-// La petición primero pasa por la autenticación, luego por multer, y finalmente llega al controlador.
+// Ya no se necesitan configuraciones especiales de Vercel ni de Multer aquí.
+
+// Ruta para que el cliente solicite una URL para subir un archivo.
+// Se protege con el middleware de autenticación.
 router.post(
-  '/', 
-  authMiddleware, // Primero, verificamos que el usuario está autenticado.
-  upload.array('musicFiles', 100), // Segundo, si está autenticado, procesamos los archivos.
-  uploadMusicFilesController // Tercero, ejecutamos la lógica del controlador.
+  '/request-upload-url', 
+  authMiddleware,
+  getSignedUrlForUploadController
+);
+
+// Ruta para que el cliente notifique que la subida ha terminado y envíe los metadatos.
+// También se protege con el middleware de autenticación.
+router.post(
+  '/finalize-upload',
+  authMiddleware,
+  finalizeUploadController
 );
 
 export default router;

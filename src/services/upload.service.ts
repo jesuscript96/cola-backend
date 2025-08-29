@@ -1,80 +1,65 @@
 // src/services/upload.service.ts
 
-import { supabase } from '../supabaseClient';
 import { supabaseAdmin } from '../supabaseAdminClient';
-import * as musicMetadata from 'music-metadata';
 
-export const processAndUploadFiles = async (files: Express.Multer.File[], userId: string) => {
-  console.log(`\n--- INICIANDO PROCESO PARA ${files.length} ARCHIVOS ---`);
-  console.log(`Usuario autenticado con ID: ${userId}`);
+interface SongMetadata {
+  storagePath: string;
+  title: string;
+  artist: string;
+  album: string;
+  durationSeconds: number;
+}
 
-  const uploadPromises = files.map(async (file) => {
-    try {
-      console.log(`\nProcesando archivo: ${file.originalname}`);
-      const metadata = await musicMetadata.parseBuffer(file.buffer, file.mimetype);
-      const { title, artist, album } = metadata.common;
-      const duration = metadata.format.duration;
+/**
+ * Genera una URL firmada para subir un archivo directamente a Supabase Storage.
+ */
+export const createSignedUploadUrl = async (userId: string, fileName: string) => {
+  // Sanitizamos el nombre del archivo para hacerlo seguro para la URL
+  const sanitizedFileName = fileName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9.\-]/g, '');
 
-      // Sanitizar el nombre del archivo
-      const sanitizedFileName = file.originalname
-        .toLowerCase()
-        .normalize('NFD') // Descomponer caracteres acentuados
-        .replace(/[\u0300-\u036f]/g, '') // Eliminar diacríticos
-        .replace(/[^a-z0-9.]/g, '-') // Reemplazar caracteres no alfanuméricos por guiones
-        .replace(/--+/g, '-'); // Colapsar múltiples guiones
+  const filePath = `${userId}/${Date.now()}-${sanitizedFileName}`;
 
-      const storagePath = `${userId}/${Date.now()}-${sanitizedFileName}`;
+  // Generamos la URL firmada que será válida por 5 minutos (300 segundos)
+  const { data, error } = await supabaseAdmin.storage
+    .from('music-files')
+    .createSignedUploadUrl(filePath);
 
-      console.log('Subiendo archivo al Storage...');
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from('music-files')
-        .upload(storagePath, file.buffer, {
-          contentType: file.mimetype,
-          upsert: false,
-        });
+  if (error) {
+    throw new Error(`Could not create signed URL: ${error.message}`);
+  }
 
-      if (uploadError) {
-        throw new Error(`Supabase Storage Error: ${uploadError.message}`);
-      }
-      console.log('Archivo subido al Storage con éxito.');
-
-      const songData = {
-        user_id: userId,
-        title: title || 'Unknown Title',
-        artist: artist || 'Unknown Artist',
-        album: album || 'Unknown Album',
-        duration_seconds: duration ? Math.round(duration) : 0,
-        storage_path: storagePath,
-      };
-
-      console.log('Intentando insertar en la base de datos con el cliente ADMIN...');
-      console.log('Datos a insertar:', JSON.stringify(songData, null, 2));
-
-      const { error: insertError } = await supabaseAdmin.from('songs').insert([songData]);
-
-      if (insertError) {
-        console.error('¡FALLO LA INSERCIÓN EN LA BASE DE DATOS!');
-        await supabase.storage.from('music-files').remove([storagePath]);
-        console.log('Archivo huérfano eliminado del Storage.');
-        throw new Error(`Supabase DB Error: ${insertError.message}`);
-      }
-
-      console.log(`¡ÉXITO! Registro insertado en la base de datos para ${file.originalname}`);
-      return { success: true, fileName: file.originalname };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      console.error(`Error procesando ${file.originalname}:`, errorMessage);
-      return { success: false, fileName: file.originalname, error: errorMessage };
-    }
-  });
-
-  // ... (el resto del código sigue igual)
-  const results = await Promise.all(uploadPromises);
-  const successfulUploads = results.filter(r => r.success);
-  const failedUploads = results.filter(r => !r.success);
+  // Devolvemos la URL y la ruta para que el cliente las use
   return {
-    message: `Processed ${files.length} files. ${successfulUploads.length} succeeded, ${failedUploads.length} failed.`,
-    successfulUploads,
-    failedUploads,
+    signedUrl: data.signedUrl,
+    path: data.path,
   };
+};
+
+/**
+ * Guarda los metadatos de una canción en la base de datos después de una subida exitosa.
+ */
+export const saveSongMetadata = async (userId: string, metadata: SongMetadata) => {
+  const { storagePath, title, artist, album, durationSeconds } = metadata;
+
+  const { data, error } = await supabaseAdmin.from('songs').insert({
+    user_id: userId,
+    storage_path: storagePath,
+    title: title || 'Unknown Title',
+    artist: artist || 'Unknown Artist',
+    album: album || 'Unknown Album',
+    duration_seconds: durationSeconds || 0,
+  }).select().single(); // .select().single() para devolver la canción creada
+
+  if (error) {
+    // Si la inserción en la BBDD falla, eliminamos el archivo huérfano del Storage
+    await supabaseAdmin.storage.from('music-files').remove([storagePath]);
+    throw new Error(`Could not save song metadata: ${error.message}`);
+  }
+
+  return data;
 };
