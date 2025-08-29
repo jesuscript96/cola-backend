@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { uploadMusicFilesController } from '../controllers/upload.controller';
 import { authMiddleware } from '../middleware/auth.middleware'; // 1. IMPORTAMOS EL MIDDLEWARE DE AUTH
-import upload from '../middleware/upload'; // 2. IMPORTAMOS LA CONFIGURACIÓN DE MULTER DESDE SU ARCHIVO
+import { upload } from '../middleware/upload'; // 2. IMPORTAMOS LA CONFIGURACIÓN DE MULTER DESDE SU ARCHIVO
 
 // Esta configuración le dice a Vercel que no procese el cuerpo de la petición.
 export const config = {
