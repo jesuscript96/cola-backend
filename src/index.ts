@@ -4,7 +4,6 @@ import cors from 'cors';
 import uploadRouter from './routes/upload.routes';
 import songsRouter from './routes/songs.routes';
 import playlistsRouter from './routes/playlists.routes';
-import authRouter from './routes/auth.routes'; // Importar las nuevas rutas de autenticación
 
 const app = express();
 
@@ -28,7 +27,6 @@ app.use(express.json());
 app.use('/api/upload', uploadRouter);
 app.use('/api/songs', songsRouter);
 app.use('/api/playlists', playlistsRouter);
-app.use('/api/auth', authRouter); // Usar las nuevas rutas de autenticación
 
 // Creamos una ruta base para verificar que la API funciona
 app.get('/api', (req, res) => {
