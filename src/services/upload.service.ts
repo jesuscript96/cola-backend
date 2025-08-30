@@ -8,6 +8,7 @@ interface SongMetadata {
   artist: string;
   album: string;
   durationSeconds: number;
+  relativePath?: string[]; // <-- Nueva propiedad
 }
 
 /**
@@ -44,8 +45,24 @@ export const createSignedUploadUrl = async (userId: string, fileName: string) =>
  * Guarda los metadatos de una canción en la base de datos después de una subida exitosa.
  */
 export const saveSongMetadata = async (userId: string, metadata: SongMetadata) => {
-  const { storagePath, title, artist, album, durationSeconds } = metadata;
+  const { storagePath, title, artist, album, durationSeconds, relativePath } = metadata;
 
+  let folderId: string | null = null;
+
+  // Llamamos a la función RPC si nos han pasado una ruta
+  if (relativePath && relativePath.length > 0) {
+    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('get_or_create_folder_path', {
+      p_user_id: userId,
+      p_folder_path: relativePath
+    });
+
+    if (rpcError) {
+      throw new Error(`Failed to process folder path: ${rpcError.message}`);
+    }
+    folderId = rpcData; // El resultado es el ID de la carpeta
+  }
+
+  // Incluimos el folder_id en la inserción
   const { data, error } = await supabaseAdmin.from('songs').insert({
     user_id: userId,
     storage_path: storagePath,
@@ -53,10 +70,10 @@ export const saveSongMetadata = async (userId: string, metadata: SongMetadata) =
     artist: artist || 'Unknown Artist',
     album: album || 'Unknown Album',
     duration_seconds: durationSeconds || 0,
-  }).select().single(); // .select().single() para devolver la canción creada
+    folder_id: folderId,
+  }).select().single();
 
   if (error) {
-    // Si la inserción en la BBDD falla, eliminamos el archivo huérfano del Storage
     await supabaseAdmin.storage.from('music-files').remove([storagePath]);
     throw new Error(`Could not save song metadata: ${error.message}`);
   }

@@ -29,15 +29,15 @@ export const getSignedUrlForUploadController = async (req: Request, res: Respons
  */
 export const finalizeUploadController = async (req: Request, res: Response) => {
   try {
-    // El user.id también viene del authMiddleware
     const userId = (req as any).user.id;
-    const { storagePath, title, artist, album, durationSeconds } = req.body;
+    const { storagePath, title, artist, album, durationSeconds, relativePath } = req.body; // <-- Extraemos relativePath
 
     if (!storagePath) {
       return res.status(400).json({ message: 'storagePath is required.' });
     }
 
-    const newSong = await saveSongMetadata(userId, { storagePath, title, artist, album, durationSeconds });
+    // Pasamos relativePath al servicio
+    const newSong = await saveSongMetadata(userId, { storagePath, title, artist, album, durationSeconds, relativePath });
     res.status(201).json(newSong);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'An unknown error occurred';
